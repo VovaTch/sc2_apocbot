@@ -1,1 +1,1 @@
-from .bot import ApocBot
+from .bot_4gate_basic import ApocBot

@@ -1,7 +1,7 @@
 from email.mime import base
 from sc2.bot_ai import BotAI, Race
 from sc2.data import Result
-from bot.routines import base_upkeep, economy, army
+from bot.routines import attack, base_upkeep, economy, army, upgrades
 from sc2.ids.unit_typeid import UnitTypeId
 
 class ApocBot(BotAI):
@@ -37,8 +37,11 @@ class ApocBot(BotAI):
         await base_upkeep.build_gateway_basic(self, iteration, amount_limit=3)
         await base_upkeep.build_cybercore_basic(self, iteration, amount_limit=1)
         
-        # Warp if warpgates, build if otherwise
+        # Warp if warpgates, build if otherwise. Basic stalker attack routine
         await army.train_stalkers_basic(self, iteration)
+        await upgrades.research_warpgate(self, iteration)
+        if self.units(UnitTypeId.STALKER).ready.amount > 0:
+            await attack.basic_stalker_attack(self, iteration, min_attack_count=4)
         
         # Chronoboost logic; chrono gateways when they are ready, otherwise chrono nexus
         if self.structures(UnitTypeId.GATEWAY).ready:
