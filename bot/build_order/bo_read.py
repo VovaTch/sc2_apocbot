@@ -31,12 +31,17 @@ class BuildOrder:
     """
     
     def __init__(self, 
-                 bo_file_path: str) -> None:
+                 bo_file_path: str,
+                 chosen_bo: str) -> None:
+        
         with open(bo_file_path, 'r') as f:
-            self.bo_dict: Dict[int, str] = yaml.safe_load(f)
+            raw_dict = yaml.safe_load(f)
+            
+        self.bo_dict: Dict[int, str] = raw_dict[chosen_bo]
             
         self.current_tasks = []
         self.chrono_target = None
+        self.parse_supply = 0
             
     async def execute(self, bot: BotAI, iteration):
         
@@ -44,26 +49,28 @@ class BuildOrder:
         chrono_nexus = bot.structures(id.NEXUS).ready.random
         
         # Build probes by default
-        await default_econ_power()
-        if bot.supply_army == 15:
+        await default_econ_power(bot, iteration)
+        if bot.supply_used == 16:
             self.chrono_target = bot.structures(id.NEXUS).ready.first
         
         # Apply chronoboost
         if self.chrono_target is not None and chrono_nexus.energy >= 50:
             chrono_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, self.chrono_target)
-            
-        current_supply = bot.supply_army
-        
+                 
         for sup_key, tasks_together in self.bo_dict.items():
+            
+            current_supply = bot.supply_used
+            print(self.current_tasks)
             
             # Break if supply is smaller, task is not pending yet
             if current_supply < sup_key:
                 break
             
             # If the supply is equal, append tasks
-            elif current_supply == sup_key:
+            elif current_supply == sup_key and self.parse_supply < current_supply:
                 tasks = tasks_together.split()
                 self.current_tasks.extend(tasks)
+                self.parse_supply = current_supply
             
             for task_idx in range(len(self.current_tasks)):
                 await self._perform_task(bot, task_idx, iteration)
@@ -82,7 +89,7 @@ class BuildOrder:
             
             # TODO: Change when the networks are activated, make gas
             if 'proxy' in task_split and 'pylon' in task_split:
-                build_location = bot.game_info.map_center.towards(bot.enemy_start_locations[0], 20)
+                build_location = bot.game_info.map_center.towards(bot.enemy_start_locations[0], 4)
             elif 'proxy' in task_split:
                 proxy_pylon = bot.structures(id.PYLON).closest_to(bot.enemy_start_locations[0])
                 build_location = proxy_pylon.position.random_on_distance(4)
@@ -93,8 +100,22 @@ class BuildOrder:
                 build_location = bot.structures(id.PYLON).ready.random.position.random_on_distance(4)
                 
             if bot.can_afford(struct_id):
-                bot.do(bot.build(struct_id, build_location))
+                await bot.build(struct_id, build_location)
                 self.current_tasks[task_idx] = '-'
+                
+            if struct_id == 'gas':
+                nexus = bot.townhalls.ready.random
+                gas_nodes = bot.vespene_geyser.closer_than(15, nexus)
+                for gas_node in gas_nodes:
+                    if not bot.can_afford(id.ASSIMILATOR):
+                        return
+                    worker = bot.select_build_worker(gas_node.position)
+                    if worker is None:
+                        return
+                    if not bot.gas_buildings or not bot.gas_buildings.closer_than(1, gas_node):
+                        worker.build(id.ASSIMILATOR, gas_node)
+                        worker.stop(queue=True)
+                        self.current_tasks[task_idx] = '-'
                 
         # Unit building
         elif task_split[0] in UNITS:
@@ -105,7 +126,7 @@ class BuildOrder:
                 self.current_tasks[task_idx] = '-'
                 
             elif task_split[0] in ['zealot', 'stalker', 'ht', 'dt', 'adept', 'sentry']:
-                unit_type = TRANSLATOR(task_split[0])
+                unit_type = TRANSLATOR[task_split[0]]
                 # Warpgate warp-in
                 if bot.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1 and bot.can_afford(unit_type) and bot.supply_left >= 2:
                     warpgate = bot.structures(id.WARPGATE).ready.random
@@ -115,20 +136,35 @@ class BuildOrder:
                 # Gateway training
                 elif bot.can_afford(unit_type) and bot.supply_left >= 2:
                     gateway = bot.structures(id.GATEWAY).ready.random
-                    gateway.train(unit_type)
-                    self.current_tasks[task_idx] = '-'
+                    if task_split[0] == 'zealot':
+                        gateway.train(unit_type)
+                        self.current_tasks[task_idx] = '-'
+                    if task_split[0] in ['stalker', 'adept', 'sentry'] and bot.structures(id.CYBERNETICSCORE).ready.amount > 0:
+                        gateway.train(unit_type)
+                        self.current_tasks[task_idx] = '-'
+                    if task_split[0] == 'ht' and bot.structures(id.TEMPLARARCHIVE).ready.amount > 0:
+                        gateway.train(unit_type)
+                        self.current_tasks[task_idx] = '-'
+                    if task_split[0] == 'dt' and bot.structures(id.DARKSHRINE).ready.amount > 0:
+                        gateway.train(unit_type)
+                        self.current_tasks[task_idx] = '-'
                     
         # Upgrades
         elif task_split[0] in UPGRADES:
             
             if task_split[0] == 'warpgate':
-                if bot.can_afford(UpgradeId.WARPGATERESEARCH) and bot.already_pending(UpgradeId.WARPGATERESEARCH) == 0:
+                if (bot.can_afford(UpgradeId.WARPGATERESEARCH) and 
+                    bot.already_pending(UpgradeId.WARPGATERESEARCH) == 0 and
+                    bot.structures(id.CYBERNETICSCORE).ready.amount > 0):
+                    
+                    print(bot.structures(id.CYBERNETICSCORE).ready)
+                    
                     cybercore = bot.structures(id.CYBERNETICSCORE).ready.first
                     cybercore.research(UpgradeId.WARPGATERESEARCH)
                     self.current_tasks[task_idx] = '-'
                     
-                if 'chrono' in task_split:
-                    self.chrono_target = cybercore
+                    if 'chrono' in task_split:
+                        self.chrono_target = cybercore
                     
         
                 

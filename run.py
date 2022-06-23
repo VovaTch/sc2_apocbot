@@ -5,6 +5,7 @@ import asyncio
 import logging
 import aiohttp
 import sc2
+
 from sc2.main import run_game
 from sc2.data import Race, Difficulty
 from sc2.client import Client
@@ -83,6 +84,10 @@ def parse_arguments():
     # Both Ladder and Local play arguments
     parser.add_argument("--OpponentId", type=str, help="A unique value identifying opponent.")
     parser.add_argument("--Realtime", action='store_true', help="Whether to use realtime mode. Default is false.")
+    
+    # Custom arguments for ApocBot
+    parser.add_argument('-c', '--config', type=str, default='bot/config/config.yaml',
+                        help='The yaml configuration file of the bot.')
 
     args, unknown_args = parser.parse_known_args()
 

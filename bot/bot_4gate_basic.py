@@ -5,7 +5,7 @@ from bot.routines import attack, base_upkeep, economy, army, upgrades, micro
 from sc2.ids.unit_typeid import UnitTypeId
 from sc2.ids.upgrade_id import UpgradeId
 
-class ApocBot(BotAI):
+class Apoc4GateBot(BotAI):
     NAME: str = "ApocBot"
     """This bot's name"""
 
