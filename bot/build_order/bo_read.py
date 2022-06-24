@@ -1,4 +1,5 @@
-from typing import Dict
+from typing import Dict, List
+import asyncio
 
 import yaml
 
@@ -8,6 +9,9 @@ from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId as id
 from bot.routines.economy import default_econ_power
 from sc2.ids.upgrade_id import UpgradeId
+from bot.routines.economy import distribute_workers_with_exception
+from bot.routines.base_upkeep import build_building
+from sc2.player import Bot
 
 STRUCTURES = {'pylon', 'gate', 'core', 'nexus', 'gas'}
 UNITS = {'probe', 'stalker', 'zealot'}
@@ -18,12 +22,29 @@ TRANSLATOR = {'pylon': id.PYLON, # Buildings
               'core': id.CYBERNETICSCORE, 
               'nexus': id.NEXUS, 
               'gas': id.ASSIMILATOR,
+              'robo': id.ROBOTICSFACILITY,
+              'forge': id.FORGE,
+              'bay': id.ROBOTICSBAY,
               
               'probe': id.PROBE, # Units
               'stalker': id.STALKER, 
               'zealot': id.ZEALOT,
+              'sentry': id.SENTRY,
+              'adept': id.ADEPT,
+              'dt': id.DARKTEMPLAR,
+              'ht': id.HIGHTEMPLAR,
+              'prism': id.WARPPRISM,
+              'immortal': id.IMMORTAL,
+              'colossus': id.COLOSSUS,
+              'disruptor': id.DISRUPTOR,
+              'phoenix': id.PHOENIX,
+              'voidray': id.VOIDRAY,
+              'oracle': id.ORACLE,
+              'carrier': id.CARRIER,
+              'tempest': id.TEMPEST,
+              'archon': id.ARCHON,
               
-              'warpgate': id.WARPGATE} # Upgrades
+              'warpgate': UpgradeId.WARPGATERESEARCH} # Upgrades
 
 class BuildOrder:
     """
@@ -42,8 +63,14 @@ class BuildOrder:
         self.current_tasks = []
         self.chrono_target = None
         self.parse_supply = 0
+        self.proxy_probe = None # This will assume a single proxy probe for now.
+        self.required_action_counts = {}
+        self.complete = False
             
     async def execute(self, bot: BotAI, iteration):
+        
+        # distribute the workers with excluding a proxy probe
+        await distribute_workers_with_exception(bot, iteration, exception_probe=self.proxy_probe)
         
         # Designate a chronoboost nexus
         chrono_nexus = bot.structures(id.NEXUS).ready.random
@@ -52,123 +79,144 @@ class BuildOrder:
         await default_econ_power(bot, iteration)
         if bot.supply_used == 16:
             self.chrono_target = bot.structures(id.NEXUS).ready.first
+        elif bot.supply_used == 17:
+            self.chrono_target = None
         
         # Apply chronoboost
         if self.chrono_target is not None and chrono_nexus.energy >= 50:
             chrono_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, self.chrono_target)
                  
+        current_supply = bot.supply_used
+        self._count_required_actions(current_supply)
+        
         for sup_key, tasks_together in self.bo_dict.items():
             
-            current_supply = bot.supply_used
-            print(self.current_tasks)
+            if sup_key > current_supply:
+                return
             
-            # Break if supply is smaller, task is not pending yet
-            if current_supply < sup_key:
-                break
-            
-            # If the supply is equal, append tasks
-            elif current_supply == sup_key and self.parse_supply < current_supply:
-                tasks = tasks_together.split()
-                self.current_tasks.extend(tasks)
-                self.parse_supply = current_supply
-            
-            for task_idx in range(len(self.current_tasks)):
-                await self._perform_task(bot, task_idx, iteration)
-                
-    async def _perform_task(self, bot: BotAI, task_idx: str, iteration):
+            tasks = tasks_together.split()
+            for task in tasks:
+                await self._perform_action(bot, task, iteration)
+                  
+    async def _perform_action(self, bot: BotAI, task, iteration):
         
-        # If task is - then return.
-        if self.current_tasks[task_idx] == '-':
+        task_split = task.split('_')
+        
+        # Construct structure
+        if task_split[0] in STRUCTURES:
+            await self._perform_construction_action(bot, task_split, iteration)
+            
+        elif task_split[0] in UNITS:
+            await self._perform_training_action(bot, task_split, iteration)
+            
+        elif task_split[0] in UPGRADES:
+            await self._perform_upgrade_action(bot, task_split, iteration)
+            
+        elif task_split[0] == 'chrono':
+            self.chrono_target = bot.structures(TRANSLATOR[task_split[1]]).random
+            
+            
+    def _count_required_actions(self, current_supply):
+        """
+        Performs a counting of all the required buildings from a build order given a supply count.
+        """
+        
+        self.required_action_counts = {}
+        for sup_key, tasks_together in self.bo_dict.items():
+            
+            # Filter out premature build order commands
+            if sup_key > current_supply:
+                return
+            
+            tasks = tasks_together.split()
+            
+            for task in tasks:
+                
+                task_split = task.split('_')
+                
+                if task_split[0] != 'chrono' and task_split[0] not in self.required_action_counts:
+                    self.required_action_counts[task_split[0]] = 1
+                elif task_split[0] != 'chrono' and task_split[0] in self.required_action_counts:
+                    self.required_action_counts[task_split[0]] += 1
+                    
+    async def _perform_construction_action(self, bot: BotAI, task_split: List[str], iteration):
+        """
+        Perform construction with a proxy posibility. TODO: Maybe later there will be a neural network that decides the location
+        """
+                 
+        if 'proxy' in task_split and 'pylon' in task_split:
+            build_location = bot.game_info.map_center.towards(bot.enemy_start_locations[0], 4)
+            self.proxy_probe = bot.units(id.PROBE).closest_to(build_location)
+            probe = self.proxy_probe
+        elif 'proxy' in task_split:
+            proxy_pylon = bot.structures(id.PYLON).closest_to(bot.enemy_start_locations[0])
+            # if not proxy_pylon.is_ready:
+            #     return
+            build_location = proxy_pylon.position.random_on_distance(4)
+            self.proxy_probe = bot.units(id.PROBE).closest_to(build_location)
+            probe = self.proxy_probe
+        elif 'pylon' in task_split:
+            nexus = bot.townhalls.ready.random
+            build_location = nexus.position.towards(bot.enemy_start_locations[0], 7)
+            probe = None
+        else:
+            build_location = bot.structures(id.PYLON).ready.random.position.random_on_distance(4)
+            probe = None
+            
+        await build_building(bot, TRANSLATOR[task_split[0]], iteration, build_location, 
+                             probe, amount_limit=self.required_action_counts[task_split[0]])
+            
+        
+    async def _perform_training_action(self, bot: BotAI, task_split: List[str], iteration):
+        """
+        Creates a unit. If it's a gateway unit and warpgate is available, warps the unit near the proxy pylon
+        """
+        # Returns if the number of units reaches the required counts
+        if (self.required_action_counts[task_split[0]] <= 
+            bot.units(TRANSLATOR[task_split[0]]).amount + 
+            bot.already_pending(TRANSLATOR[task_split[0]])):
             return
         
-        task_split = self.current_tasks[task_idx].split('_')
-        
-        # Build building
-        if task_split[0] in STRUCTURES:
-            struct_id = TRANSLATOR[task_split[0]]
+        if task_split[0] == 'probe' and bot.structures(id.NEXUS).ready > 0:
+            nexus = bot.structures(id.NEXUS).ready.random
+            nexus.train(id.PROBE)
             
-            # TODO: Change when the networks are activated, make gas
-            if 'proxy' in task_split and 'pylon' in task_split:
-                build_location = bot.game_info.map_center.towards(bot.enemy_start_locations[0], 4)
-            elif 'proxy' in task_split:
-                proxy_pylon = bot.structures(id.PYLON).closest_to(bot.enemy_start_locations[0])
-                build_location = proxy_pylon.position.random_on_distance(4)
-            elif 'pylon' in task_split:
-                nexus = bot.townhalls.ready.random
-                build_location = nexus.position.towards(bot.enemy_start_locations[0], 7)
+        elif (task_split[0] in ['zealot', 'stalker', 'ht', 'dt', 'adept', 'sentry'] and 
+                bot.structures(id.GATEWAY).ready.amount + bot.structures(id.WARPGATE).ready.amount > 0):
+            
+            unit_type = TRANSLATOR[task_split[0]]
+
+            # Gateway training
+            if bot.can_afford(unit_type) and bot.supply_left >= 2:
+                if (task_split[0] == 'zealot' or 
+                    (task_split[0] in ['stalker', 'adept', 'sentry'] and bot.structures(id.CYBERNETICSCORE).ready.amount > 0) or
+                    (task_split[0] == 'ht' and bot.structures(id.TEMPLARARCHIVE).ready.amount > 0) or
+                    (task_split[0] == 'dt' and bot.structures(id.DARKSHRINE).ready.amount > 0)):
+                    
+                    if bot.structures(id.WARPGATE).ready.amount > 0:
+                        warpgate = bot.structures(id.WARPGATE).ready.random
+                        warp_location = bot.structures(id.PYLON).closest_to(bot.enemy_start_locations[0]).position.random_on_distance(4)
+                        warpgate.warp_in(unit_type, warp_location)
+                    else:
+                        gateway = bot.structures(id.GATEWAY).ready.random
+                        gateway.train(unit_type)
+                        
+    async def _perform_upgrade_action(self, bot: BotAI, task_split: List[str], iteration):
+        
+        upgrade_type = TRANSLATOR[task_split[0]]
+        if task_split[0] in ['warpgate']:
+            if (bot.structures(id.CYBERNETICSCORE).ready.amount > 0 
+                and bot.already_pending_upgrade(upgrade_type) != 1 
+                and bot.can_afford(upgrade_type)):
+                
+                upgrader = bot.structures(id.CYBERNETICSCORE).ready.random
             else:
-                build_location = bot.structures(id.PYLON).ready.random.position.random_on_distance(4)
+                return
                 
-            if bot.can_afford(struct_id):
-                await bot.build(struct_id, build_location)
-                self.current_tasks[task_idx] = '-'
+        upgrader.research(upgrade_type)
                 
-            if struct_id == 'gas':
-                nexus = bot.townhalls.ready.random
-                gas_nodes = bot.vespene_geyser.closer_than(15, nexus)
-                for gas_node in gas_nodes:
-                    if not bot.can_afford(id.ASSIMILATOR):
-                        return
-                    worker = bot.select_build_worker(gas_node.position)
-                    if worker is None:
-                        return
-                    if not bot.gas_buildings or not bot.gas_buildings.closer_than(1, gas_node):
-                        worker.build(id.ASSIMILATOR, gas_node)
-                        worker.stop(queue=True)
-                        self.current_tasks[task_idx] = '-'
-                
-        # Unit building
-        elif task_split[0] in UNITS:
-                
-            if task_split[0] == 'probe':
-                nexus = bot.structures(id.NEXUS).ready.random
-                nexus.train(id.PROBE)
-                self.current_tasks[task_idx] = '-'
-                
-            elif task_split[0] in ['zealot', 'stalker', 'ht', 'dt', 'adept', 'sentry']:
-                unit_type = TRANSLATOR[task_split[0]]
-                # Warpgate warp-in
-                if bot.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1 and bot.can_afford(unit_type) and bot.supply_left >= 2:
-                    warpgate = bot.structures(id.WARPGATE).ready.random
-                    warp_location = bot.structures(id.PYLON).closest_to(bot.enemy_start_locations[0]).position.random_on_distance(4)
-                    warpgate.warp_in(unit_type, warp_location)
-                    self.current_tasks[task_idx] = '-'
-                # Gateway training
-                elif bot.can_afford(unit_type) and bot.supply_left >= 2:
-                    gateway = bot.structures(id.GATEWAY).ready.random
-                    if task_split[0] == 'zealot':
-                        gateway.train(unit_type)
-                        self.current_tasks[task_idx] = '-'
-                    if task_split[0] in ['stalker', 'adept', 'sentry'] and bot.structures(id.CYBERNETICSCORE).ready.amount > 0:
-                        gateway.train(unit_type)
-                        self.current_tasks[task_idx] = '-'
-                    if task_split[0] == 'ht' and bot.structures(id.TEMPLARARCHIVE).ready.amount > 0:
-                        gateway.train(unit_type)
-                        self.current_tasks[task_idx] = '-'
-                    if task_split[0] == 'dt' and bot.structures(id.DARKSHRINE).ready.amount > 0:
-                        gateway.train(unit_type)
-                        self.current_tasks[task_idx] = '-'
-                    
-        # Upgrades
-        elif task_split[0] in UPGRADES:
-            
-            if task_split[0] == 'warpgate':
-                if (bot.can_afford(UpgradeId.WARPGATERESEARCH) and 
-                    bot.already_pending(UpgradeId.WARPGATERESEARCH) == 0 and
-                    bot.structures(id.CYBERNETICSCORE).ready.amount > 0):
-                    
-                    print(bot.structures(id.CYBERNETICSCORE).ready)
-                    
-                    cybercore = bot.structures(id.CYBERNETICSCORE).ready.first
-                    cybercore.research(UpgradeId.WARPGATERESEARCH)
-                    self.current_tasks[task_idx] = '-'
-                    
-                    if 'chrono' in task_split:
-                        self.chrono_target = cybercore
-                    
-        
-                
-                
-            
-        
-                
+
+                 
+                 
+                 
+             

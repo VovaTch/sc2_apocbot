@@ -33,7 +33,6 @@ class ApocBot(BotAI):
         This code runs continually throughout the game
         Populate this function with whatever your bot should do!
         """
-        await self.distribute_workers()
         
         # Protoss vs Protoss gameplay loop
         if self.game_info.player_races[2] == 3:

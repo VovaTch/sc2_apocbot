@@ -47,6 +47,36 @@ async def build_cybercore_basic(bot: BotAI, iteration, amount_limit=1):
         pylon = bot.structures(UnitTypeId.PYLON).ready.random
         await bot.build(UnitTypeId.CYBERNETICSCORE, near=pylon)
         
+async def build_building(bot: BotAI, struct_id: UnitTypeId, iteration, location, worker=None, amount_limit=1):
+    
+    if struct_id != UnitTypeId.ASSIMILATOR:
+        
+        # Count all required buildings
+        struct_amount = bot.structures(UnitTypeId.GATEWAY).amount\
+            + bot.structures(UnitTypeId.WARPGATE).amount + bot.already_pending(UnitTypeId.GATEWAY)\
+            if struct_id in [UnitTypeId.GATEWAY, UnitTypeId.WARPGATE]\
+            else bot.structures(struct_id).amount + bot.already_pending(struct_id)
+
+        if (bot.can_afford(struct_id) and 
+            struct_amount < amount_limit):
+            
+            if worker is None:
+                await bot.build(struct_id, near=location)
+            else:
+                worker.build(struct_id, location)
+    else:
+        nexus = bot.townhalls.ready.random
+        gas_node = bot.vespene_geyser.closer_than(15, nexus).random
+        if not bot.can_afford(UnitTypeId.ASSIMILATOR):
+            return
+        worker = bot.select_build_worker(gas_node.position)
+        if worker is None:
+            return
+        if not bot.gas_buildings or not bot.gas_buildings.closer_than(1, gas_node):
+            worker.build(UnitTypeId.ASSIMILATOR, gas_node)
+            worker.stop(queue=True)
+    
+        
 async def chronoboost(bot: BotAI, iteration, building_type=UnitTypeId.NEXUS):
     
     if bot.structures(UnitTypeId.NEXUS).amount == 0:
