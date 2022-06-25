@@ -1,3 +1,4 @@
+from distutils.command.build import build
 from typing import Dict, List
 import asyncio
 
@@ -11,7 +12,7 @@ from bot.routines.economy import distribute_workers_with_exception, default_econ
 from bot.routines.base_upkeep import build_building
 from bot.routines.army import train_gateway_unit_basic, train_nongateway_unit_basic
 from bot.routines.upgrades import research_upgrade
-from bot.routines.attack import adept_attack_logic_basic
+from bot.routines.attack import adept_attack_logic_basic, basic_base_defense_logic
 from sc2.ids.upgrade_id import UpgradeId
 
 
@@ -74,8 +75,6 @@ class BuildOrder:
         if current_supply >= 22:
             if self.scouting_probe is not None:
                 await self.scounting_logic(bot, iteration)
-            else:
-                self.scouting_probe = bot.units(id.PROBE).closest_to(bot.enemy_start_locations[0])
             
         # 18 resume production + cybercore
         if current_supply >= 18:
@@ -109,16 +108,17 @@ class BuildOrder:
                 
         # Chrono economy
         if self.adept_built_flag:
+            
+            if bot.already_pending(id.COLOSSUS):
+                chrono_target = bot.structures(id.ROBOTICSFACILITY).ready.random
+                await self._chrono_building(bot, chrono_target, iteration)
+            
             chrono_target = bot.townhalls.ready.random
             await self._chrono_building(bot, chrono_target, iteration)
                 
         # 27 stalker
-        if current_supply >= 27:
-            
-            if not self.stalker_built_flag:
-                await train_gateway_unit_basic(bot, id.STALKER)
-            elif bot.already_pending(id.STALKER):
-                self.stalker_built_flag = True
+        if current_supply >= 27 and bot.units(id.STALKER).amount + bot.already_pending(id.STALKER) < 1:
+            await train_gateway_unit_basic(bot, id.STALKER)
                 
         # 33 robo
         if current_supply >= 32:
@@ -133,31 +133,122 @@ class BuildOrder:
             await build_building(bot, id.PYLON, iteration, placement, amount_limit=3)
             
         # 38 x2 gateways
-        if current_supply >= 32:
+        if current_supply >= 38:
             placement = bot.structures(id.PYLON).ready.random.position.random_on_distance(4)
-            await build_building(bot, id.ROBOTICSFACILITY, iteration, placement, amount_limit=3)
+            await build_building(bot, id.GATEWAY, iteration, placement, amount_limit=3)
             
         # 39 stalker
-        if current_supply == 39:
-            self.stalker_built_flag = False
-        if current_supply >= 39:
-        
-            if not self.stalker_built_flag:
-                await train_gateway_unit_basic(bot, id.STALKER)
-            elif bot.already_pending(id.STALKER):
-                self.stalker_built_flag = True
+        if current_supply >= 39 and bot.units(id.STALKER).amount + bot.already_pending(id.STALKER) < 2:
+            await train_gateway_unit_basic(bot, id.STALKER)
                 
         # 43 observer
-        if current_supply >= 43:
-        
-            if not self.observer_built_flag:
-                await train_nongateway_unit_basic(bot, id.OBSERVER)
-            elif bot.already_pending(id.OBSERVER):
-                self.stalker_built_flag = True
+        if current_supply >= 43 and bot.units(id.OBSERVER).amount + bot.already_pending(id.OBSERVER) < 1:
+            await train_nongateway_unit_basic(bot, id.OBSERVER)
             
+        
+        # 46 expand
+        if current_supply >= 46:
+            
+            # Send a probe to the expansion
+            if bot.townhalls.amount < 3:
+                await bot.expand_now()
+                if bot.minerals > 300 and self.scouting_probe is None:
+                    self.scouting_probe = bot.units(id.PROBE).closest_to(bot.enemy_start_locations[0])
+                    self.scouting_probe.move(bot.enemy_start_locations[0])
+                    
+        # 47 3rd gas
+        if current_supply >= 47:
+            await build_building(bot, id.ASSIMILATOR, iteration, placement, amount_limit=3)
+            
+        # 48 pylon + robobay
+        if current_supply >= 48:
+            await build_building(bot, id.ROBOTICSBAY, iteration, placement, amount_limit=1)
+            placement = bot.townhalls.closest_to(bot.enemy_start_locations[0]).\
+                position.towards(bot.enemy_start_locations[0], distance=4)
+            await build_building(bot, id.PYLON, iteration, placement, amount_limit=4)
+            
+        # 50 x3 stalkers
+        if current_supply >= 50 and bot.units(id.STALKER).amount < 5:
+            await train_gateway_unit_basic(bot, id.STALKER)
+            
+        # 56 pylon
+        if current_supply >= 56:
+            await build_building(bot, id.PYLON, iteration, placement, amount_limit=5)
+            
+        # 60 x3 stalkers
+        if current_supply >= 50 and bot.units(id.STALKER).amount < 8:
+            await train_gateway_unit_basic(bot, id.STALKER)
+            
+        # 66 colossus
+        if current_supply >= 66 and bot.units(id.COLOSSUS).amount < 1:
+            await train_nongateway_unit_basic(bot, id.COLOSSUS)
+            
+        # 75 shield battery
+        if current_supply >= 75:
+            placement = bot.townhalls.closest_to(bot.enemy_start_locations[0]).\
+                position.towards(bot.enemy_start_locations[0], distance=4)
+            await build_building(bot, id.SHIELDBATTERY, iteration, placement, amount_limit=1)
+            
+        # 77 shield battery
+        if current_supply >= 75:
+            placement = bot.townhalls.closest_to(bot.enemy_start_locations[0]).\
+                position.towards(bot.enemy_start_locations[0], distance=4)
+            await build_building(bot, id.SHIELDBATTERY, iteration, placement, amount_limit=2)
+            
+                            
+        # 80 4th gas + extended termal lance + 2 pylons
+        if current_supply >= 80:
+            placement = bot.structures(id.PYLON).ready.random.position.random_on_distance(4)
+            await build_building(bot, id.ASSIMILATOR, iteration, placement, amount_limit=4)
+            await research_upgrade(bot, id.ROBOTICSBAY, UpgradeId.EXTENDEDTHERMALLANCE, iteration)
+            await build_building(bot, id.PYLON, iteration, placement, amount_limit=7)
+        
+        # 83 colossus    
+        if current_supply >= 83 and bot.units(id.COLOSSUS).amount < 2:
+            placement = bot.structures(id.PYLON).ready.random.position.random_on_distance(4)
+            await train_nongateway_unit_basic(bot, id.COLOSSUS)
+            await build_building(bot, id.PYLON, iteration, placement, amount_limit=9)
+            
+        # 92 Zealots x3
+        if current_supply >= 92 and bot.units(id.ZEALOT).amount < 3:
+            await train_gateway_unit_basic(bot, id.ZEALOT)
+            
+        # 98 upgrades
+        if current_supply >= 98:
+            placement = bot.structures(id.PYLON).ready.random.position.random_on_distance(4)
+            self.econ_stop_flag = True
+            await build_building(bot, id.FORGE, iteration, placement, amount_limit=2)
+            await build_building(bot, id.TWILIGHTCOUNCIL, iteration, placement, amount_limit=1)
+            await build_building(bot, id.GATEWAY, iteration, placement, amount_limit=8)
+            await build_building(bot, id.PYLON, iteration, placement, amount_limit=12)
+            
+        # Forge upgrades
+        if bot.structures(id.FORGE).ready.amount == 2:
+            await research_upgrade(bot, id.FORGE, UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1, iteration)
+            await research_upgrade(bot, id.FORGE, UpgradeId.PROTOSSGROUNDARMORSLEVEL1, iteration)
+            
+        # Council charge
+        if bot.structures(id.TWILIGHTCOUNCIL).ready.amount == 1:
+            await research_upgrade(bot, id.TWILIGHTCOUNCIL, UpgradeId.CHARGE, iteration)
+
+            
+        # Build another colossus
+        if current_supply >= 98 and bot.units(id.COLOSSUS).amount < 3:
+            await train_nongateway_unit_basic(bot, id.COLOSSUS)
+            
+        # Build a Warp Prism
+        if current_supply >= 104 and bot.units(id.WARPPRISM).amount < 1:
+            await train_nongateway_unit_basic(bot, id.WARPPRISM)
+            
+        # Finish the build if the warp prism is pending
+        if bot.units(id.WARPPRISM).ready.amount > 0:
+            self.build_order_finished = True
+        
         '''
         BUILD ORDER FINISHES HERE <========================================
         '''
+        if current_supply >= 35:
+            await basic_base_defense_logic(bot, iteration)
             
         # Economy whether to build probes or not
         if not self.econ_stop_flag:
@@ -165,7 +256,12 @@ class BuildOrder:
             
     
     async def scounting_logic(self, bot: BotAI, iteration):
-        self.scouting_probe.move(bot.enemy_start_locations[0].random_on_distance(7))
+        if self.scouting_probe is not None:
+            self.scouting_probe.move(bot.enemy_start_locations[0].random_on_distance(7))
+        if bot.units(id.OBSERVER).ready.amount > 0:
+            for obs in bot.units(id.OBSERVER):
+                send_location = bot.enemy_start_locations[0].towards(bot.game_info.map_center, distance=5)
+                obs.move(send_location)
         
     async def _chrono_building(self, bot: BotAI, target, iteration, energy_min=0):
         
