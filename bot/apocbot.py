@@ -2,7 +2,7 @@ import yaml
 
 from sc2.bot_ai import BotAI, Race
 from sc2.data import Result
-from bot.build_order.bo_read import BuildOrder
+from bot.build_order.pvt_3gate_3base_colossi_8gate_chargelot import BuildOrder
 
 class ApocBot(BotAI):
     NAME: str = "ApocAlypsE Bot"
@@ -25,7 +25,7 @@ class ApocBot(BotAI):
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
-        self.pvt_build_order = BuildOrder('bot/build_order/bo_pvp.yaml', self.config['pvt_build_order'])
+        self.pvt_build_order = BuildOrder()
         print("Game started")
 
     async def on_step(self, iteration: int):

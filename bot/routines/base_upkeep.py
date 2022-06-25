@@ -65,6 +65,8 @@ async def build_building(bot: BotAI, struct_id: UnitTypeId, iteration, location,
             else:
                 worker.build(struct_id, location)
     else:
+        
+        # Assimilator logic. Build if is available and not exceeding the limit count
         nexus = bot.townhalls.ready.random
         gas_node = bot.vespene_geyser.closer_than(15, nexus).random
         if not bot.can_afford(UnitTypeId.ASSIMILATOR):
@@ -72,7 +74,9 @@ async def build_building(bot: BotAI, struct_id: UnitTypeId, iteration, location,
         worker = bot.select_build_worker(gas_node.position)
         if worker is None:
             return
-        if not bot.gas_buildings or not bot.gas_buildings.closer_than(1, gas_node):
+        if ((not bot.gas_buildings or not bot.gas_buildings.closer_than(1, gas_node)) and
+            bot.structures(UnitTypeId.ASSIMILATOR).amount + bot.already_pending(UnitTypeId.ASSIMILATOR) < amount_limit):
+            
             worker.build(UnitTypeId.ASSIMILATOR, gas_node)
             worker.stop(queue=True)
     
