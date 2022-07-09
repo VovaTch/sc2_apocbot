@@ -5,12 +5,14 @@ from sc2.ids.upgrade_id import UpgradeId
 
 
 async def research_upgrade(bot: BotAI, struct_id: id, upgrade_id: UpgradeId, iteration):
-    if (bot.structures(struct_id).ready 
-        and bot.can_afford(upgrade_id) 
-        and bot.already_pending_upgrade(upgrade_id) == 0):
-        
-        structure = bot.structures(struct_id).ready.first
-        structure.research(upgrade_id)
+    structures = bot.structures(struct_id).ready
+    for structure in structures:
+        if (bot.structures(struct_id).ready
+            and bot.can_afford(upgrade_id) 
+            and bot.already_pending_upgrade(upgrade_id) == 0
+            and not structure.is_active):
+            
+            structure.research(upgrade_id)
 
 
 
@@ -19,7 +21,7 @@ async def research_warpgate(bot: BotAI, iteration):
         and bot.can_afford(UpgradeId.WARPGATERESEARCH) 
         and bot.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 0):
         
-        cybercore = bot.structures(id.CYBERNETICSCORE).ready.first
+        cybercore = bot.structures(id.CYBERNETICSCORE).ready.idle
         cybercore.research(UpgradeId.WARPGATERESEARCH)
         
 async def forge_upgrades(bot: BotAI, upgrade_id: UpgradeId, iteration):
@@ -27,7 +29,7 @@ async def forge_upgrades(bot: BotAI, upgrade_id: UpgradeId, iteration):
         and bot.can_afford(upgrade_id) 
         and bot.already_pending_upgrade(upgrade_id) == 0):
         
-        forge = bot.structures(id.FORGE).ready.random
+        forge = bot.structures(id.FORGE).ready.idle
         forge.research(upgrade_id)
         
 async def upgrade_weapons(bot: BotAI, iteration):

@@ -241,7 +241,7 @@ class BuildOrder:
             await train_nongateway_unit_basic(bot, id.WARPPRISM)
             
         # Finish the build if the warp prism is pending
-        if bot.units(id.WARPPRISM).ready.amount > 0:
+        if bot.units(id.WARPPRISM).amount > 0:
             self.build_order_finished = True
         
         '''

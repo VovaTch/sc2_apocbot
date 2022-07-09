@@ -2,7 +2,8 @@ import yaml
 
 from sc2.bot_ai import BotAI, Race
 from sc2.data import Result
-from bot.build_order.pvt_3gate_3base_colossi_8gate_chargelot import BuildOrder
+from bot.build_order.pvt_3gate_3base_colossi_8gate_chargelot import BuildOrder as BuildOrderPvT
+from bot.midgame_strategy.pvt_4col_5ht_zealot_midgame import MidGameStrategy as MidGameStrategyPvT
 
 class ApocBot(BotAI):
     NAME: str = "ApocAlypsE Bot"
@@ -25,7 +26,10 @@ class ApocBot(BotAI):
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
-        self.pvt_build_order = BuildOrder()
+        # PvT strategy
+        self.pvt_build_order = BuildOrderPvT()
+        self.pvt_midgame = MidGameStrategyPvT()
+        
         print("Game started")
 
     async def on_step(self, iteration: int):
@@ -53,7 +57,10 @@ class ApocBot(BotAI):
     async def pvt_gameplay(self, iteration: int):
         
         # Execute a build order. TODO: Do it from a configuration yaml, specific for the bot/matchup
-        await self.pvt_build_order.execute(self, iteration)
+        if not self.pvt_build_order.build_order_finished:
+            await self.pvt_build_order.execute(self, iteration)
+        else:
+            await self.pvt_midgame.execute(self, iteration)
     
     async def pvz_gameplay(self, iteration: int):
         pass

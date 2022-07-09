@@ -15,7 +15,7 @@ async def build_pylons_basic(bot: BotAI, iteration):
     
     if (bot.can_afford(id.PYLON) and
         bot.already_pending(id.PYLON) == 0 and
-        bot.supply_left < 3 * bot.townhalls.amount):
+        bot.supply_left < 5 * bot.townhalls.amount):
         
         await bot.build(id.PYLON, near=pos)
         
