@@ -239,9 +239,8 @@ class BuildOrder:
         # Build a Warp Prism
         if current_supply >= 104 and bot.units(id.WARPPRISM).amount < 1:
             await train_nongateway_unit_basic(bot, id.WARPPRISM)
-            
-        # Finish the build if the warp prism is pending
-        if bot.units(id.WARPPRISM).amount > 0:
+            if not self.build_order_finished:
+                await bot.chat_send(f'Finished the build order at {current_supply} supply ^_^')
             self.build_order_finished = True
         
         '''

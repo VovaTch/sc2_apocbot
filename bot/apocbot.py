@@ -5,6 +5,26 @@ from sc2.data import Result
 from bot.build_order.pvt_3gate_3base_colossi_8gate_chargelot import BuildOrder as BuildOrderPvT
 from bot.midgame_strategy.pvt_4col_5ht_zealot_midgame import MidGameStrategy as MidGameStrategyPvT
 
+'''
+TODO:
+1. General attacking routine
+2. General expansion routine
+
+TODO longer term:
+1. Probe scouting routine
+2. Adept scouting routine
+3. Scouting information stack
+4. Unit specific micro
+5. Dynamic positioning
+6. Endgame strategy
+
+TODO deep learning:
+1. Building placement
+2. Micro?
+3. Higher level strategy?
+
+'''
+
 class ApocBot(BotAI):
     NAME: str = "ApocAlypsE Bot"
     """This bot's name"""

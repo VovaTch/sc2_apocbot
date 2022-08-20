@@ -24,6 +24,7 @@ async def adept_attack_logic_basic(bot: BotAI, iteration, min_attack_count=1):
         if adept_count >= min_attack_count:
             adept.attack(bot.enemy_start_locations[0])
             if (adept.position.distance_to(bot.enemy_start_locations[0]) > 10):
+                await bot.chat_send('Adept is far still')
                 adept(AbilityId.ADEPTPHASESHIFT_ADEPTPHASESHIFT, bot.enemy_start_locations[0])
                 adept.attack(bot.enemy_start_locations[0])
             else:
